@@ -22,19 +22,22 @@ To print out the test cases, use `RUST_LOG=debug cargo run`.
 Those are the cases we considered, with the index of the test vectors when applicable:
 
 ```
-| n   | parameters              | cofactored        | cofactorless                     | comment                               |
-|-----+-------------------------+-------------------+----------------------------------+---------------------------------------|
-|0-1  | S = 0, R small, A small | always passes     | R = -k×A                         | see ed25519's verify_strict           |
-|     | S > 0, R small, A small | always fails      | always fails                     | no large order component on the right |
-|     | S = 0, R mixed, A small | always fails      | always fails                     | no large order component on the left  |
-|2-3  | S > 0, R mixed, A small | 8×S×B = 8×R       | 8×S×B = 8×R ∧ L×R = -L×k×A       | [*]                                   |
-|     | S = 0, R small, A mixed | always fails      | always fails                     | no large order component on the left  |
-|4-5  | S > 0, R small, A mixed | 8×S×B = 8×k×A     | 8×S×B = 8×k×A ∧ L×R = -L×k×A     | symmetric of [*]                      |
-|     | S = 0, R mixed, A mixed | 8×R = -8×k×A      | R = -k×A                         | hard to test (req. hash inversion)    |
-|6-7  | S > 0, R mixed, A mixed | 8×S×B = 8×R+8×k×A | 8×S×B = 8×R+8×k×A ∧ L×R = -L×k×A |                                       |
-|9-10 | S > L                   | always passes     | always passes                    |                                       |
-|10-11| R non-canonical, small  | always passes     | always passes                    | depends on reduction bef. hashing     |
-|12-13| A non-canonical, small  | always passes     | always passes                    | depends on reduction bef. hashing     |
+ -------------------------------------------------------------------------------------------------------
+|  |    msg |    sig |  S   |    A  |    R  | cof-ed | cof-less |        comment                        |
+|-------------------------------------------------------------------------------------------------------|
+| 0| ..22b6 | ..0000 |  = 0 | small | small |    V   |    V     | small A and R                         |
+| 1| ..2e79 | ..ac04 |  < L | small | mixed |    V   |    V     | small A only                          |
+| 2| ..b9ab | ..260e |  < L | mixed | small |    V   |    V     | small R only                          |
+| 3| ..2e79 | ..d009 |  < L | mixed | mixed |    V   |    V     | succeeds unless full-order is checked |
+| 4| ..f56c | ..1a09 |  < L | mixed | mixed |    V   |    X     |                                       |
+| 5| ..f56c | ..7405 |  < L | mixed |   L   |    V*  |    V     | fails cofactored iff (8h) prereduced  |
+| 6| ..ec40 | ..a514 |  > L |   L   |   L   |    V   |    V     |                                       |
+| 7| ..ec40 | ..8c22 | >> L |   L   |   L   |    V   |    V     |                                       |
+| 8| ..5baf | ..ac08 |  < L | mixed | small*|    V   |    V     | non-canonical R, reduced for hash     |
+| 9| ..5baf | ..ac08 |  < L | mixed | small*|    V   |    V     | non-canonical R, not reduced for hash |
+|10| ..155b | ..ac04 |  < L | small*| mixed |    V   |    V     | non-canonical A, reduced for hash     |
+|11| ..155b | ..ac04 |  < L | small*| mixed |    V   |    V     | non-canonical A, not reduced for hash |
+ -------------------------------------------------------------------------------------------------------
 ```
 
 Here "mixed" means with a strictly positive torsion component but not small,
@@ -81,42 +84,24 @@ For a total of 15 test vectors.
 ## Results
 
 ```
-┌---------------------------------------------------------------------------┐
-|Library        | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10| 11| 12| 13| 14|
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|Apple CryptoKit| X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|BoringSSL      | X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|Bouncy Castle  | X | V | X | V | X | V | V | X | X | X | X | X | X | X | X |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|Dalek          | X | V | X | V | X | V | V | X | X | X | V | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|ed25519-donna  | X | V | X | V | X | V | V | X | X | V | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|ed25519-java   | X | V | X | V | X | V | V | X | X | V | V | X | X | V | X |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|Go             | X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|libra-crypto   | X | X | X | X | X | X | V | X | X | X | X | X | X | X | X |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|LibSodium      | X | X | X | X | X | X | V | X | X | X | X | X | X | X | X |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|nCipher        | X | X | X | X | X | V | X | X | X | X | X | ? | ? | ? | ? |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|npm            | X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|OpenSSL-3.0    | X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|PyCA           | X | V | X | V | X | V | V | X | X | X | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|python-ed25519 | X | V | X | V | X | V | V | X | X | V | V | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|ref10          | X | V | X | V | X | V | V | X | X | V | X | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|TweetNaCl-js   | X | V | X | V | X | V | V | X | X | V | V | X | X | X | V |
-|---------------+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
-|Zebra          | V | V | V | V | V | V | V | V | V | X | X | X | V | V | V |
-└---------------------------------------------------------------------------┘
-
+ ---------------------------------------------------------------
+|Library        | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10| 11|
+|---------------+---+---+---+---+---+---+---+---+---+---+---+---|
+|BoringSSL      | V | V | V | V | X | X | X | X | X | X | X | V |
+|BouncyCastle   | V | V | V | V | X | X | X | X | X | X | X | X |
+|CryptoKit      | V | V | V | V | X | X | X | X | X | X | X | V |
+|Dalek          | V | V | V | V | X | X | X | V | X | X | X | V |
+|ed25519-donna  | V | V | V | V | X | X | V | X | X | X | X | V |
+|ed25519-java   | V | V | V | V | X | X | V | V | X | X | V | X |
+|Go             | V | V | V | V | X | X | X | X | X | X | X | V |
+|libra-crypto   | X | X | X | V | X | X | X | X | X | X | X | X |
+|LibSodium      | X | X | X | V | X | X | X | X | X | X | X | X |
+|npm            | V | V | V | V | X | X | X | X | X | X | X | V |
+|OpenSSL-3.0    | V | V | V | V | X | X | X | X | X | X | X | V |
+|PyCA           | V | V | V | V | X | X | X | X | X | X | X | V |
+|python-ed25519 | V | V | V | V | X | X | V | V | X | X | X | V |
+|ref10          | V | V | V | V | X | X | V | X | X | X | X | V |
+|TweetNaCl-js   | V | V | V | V | X | X | V | V | X | X | X | V |
+|Zebra          | V | V | V | V | V | V | X | X | X | V | V | V |
+ ---------------------------------------------------------------
 ```
